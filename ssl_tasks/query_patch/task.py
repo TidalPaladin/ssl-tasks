@@ -14,7 +14,7 @@ from torchmetrics import MetricCollection
 from torchvision.ops import box_iou
 from torchvision.utils import draw_bounding_boxes
 
-from ..contrastive import ContrastiveAugmentation, UniqueEmbeddingLoss
+from ..contrastive import ContrastiveAugmentation
 from ..tokens import TokenMask
 from .augmentation import SmallBoxCrop
 
@@ -60,7 +60,6 @@ class QueryPatch(Task):
         self.transform = ContrastiveAugmentation(self.backbone.img_size, num_batches=augment_batches)
         self.box_transform = SmallBoxCrop(self.backbone.img_size, num_batches=augment_batches)
         self.box_loss = nn.L1Loss(reduction="none")
-        self.query_loss = UniqueEmbeddingLoss()
 
         self.box_head = nn.Linear(self.dim, 4)
         nn.init.constant_(self.box_head.bias, 0.5)

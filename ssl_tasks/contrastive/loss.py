@@ -10,7 +10,13 @@ from torch import Tensor
 
 class ContrastiveEmbeddingLoss(nn.CosineEmbeddingLoss):
     r"""Embedding loss wrapper over cosine similarity that accepts two pairs of inputs and a class membership
-    for each input pair
+    for each input pair. The loss aims to maximize the similarity between the two inputs of the same class
+    and minimize the similarity between the two inputs of different classes.
+
+    Args:
+        cartesian: If True, compute the loss for all pairs of inputs. If False, compute the loss for each pair of
+            inputs separately.
+        margin: Margin value for the loss function. Default: 0.
     """
 
     def __init__(self, cartesian: bool = True, margin: float = 0):
@@ -49,6 +55,10 @@ class ContrastiveEmbeddingLoss(nn.CosineEmbeddingLoss):
 
 
 class PointwiseContrastiveEmbeddingLoss(ContrastiveEmbeddingLoss):
+    r"""A simplification of :class:`ContrastiveEmbeddingLoss` that assumes that the inputs are paired
+    pointwise, i.e. the first input is the original and the second input is the augmented version of the same sample.
+    """
+
     def forward(self, x: Tensor, x_aug: Tensor) -> Tensor:
         cls, cls_aug = self.build_pointwise_class_targets(x)
         return super().forward(x, x_aug, cls, cls_aug)
@@ -58,23 +68,3 @@ class PointwiseContrastiveEmbeddingLoss(ContrastiveEmbeddingLoss):
         N = pred.shape[0]
         t = torch.arange(N).to(pred.device)
         return t, t
-
-
-class UniqueEmbeddingLoss(nn.CosineEmbeddingLoss):
-    def __init__(self, margin: float = 0):
-        super().__init__(margin=margin, reduction="none")
-
-    def forward(self, x: Tensor) -> Tensor:
-        N, D = x.shape
-        # expand to cartesian product
-        x = x.view(1, N, D).expand(N, -1, -1)
-
-        # zero out diagonal so same-token pairs aren't considered
-        weight = 1 - torch.eye(N, device=x.device).unsqueeze_(-1)
-        x = x * weight
-
-        # polarity is all -1 because we want all embeddings to be different
-        polarity = torch.full_like(x[..., 0], fill_value=-1, dtype=torch.long)
-
-        loss = super().forward(x.view(-1, D), x.view(-1, D), polarity.view(-1))
-        return loss.mean()

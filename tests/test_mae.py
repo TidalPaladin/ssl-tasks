@@ -1,20 +1,20 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import torch
-from torch import Tensor
-from torch.utils.data import DataLoader
+from typing import Tuple
+
 import pytorch_lightning as pl
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import torch
+from torch.utils.data import DataLoader
+
 
 class MAEDataModule(pl.LightningDataModule):
-
     def __init__(
-        self, 
-        length: int = 100, 
+        self,
+        length: int = 100,
         batch_size: int = 4,
         img_size: Tuple[int, int] = (32, 32),
-):
+    ):
         super().__init__()
         self.length = length
         self.batch_size = batch_size

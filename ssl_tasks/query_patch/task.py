@@ -5,12 +5,12 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 import torchmetrics as tm
-from torchmetrics import MetricCollection
-from deep_helpers.tasks import Task
 from deep_helpers.structs import State
+from deep_helpers.tasks import Task
 from kornia.geometry.transform import crop_by_indices
 from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
+from torchmetrics import MetricCollection
 from torchvision.ops import box_iou
 from torchvision.utils import draw_bounding_boxes
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, cast
+from typing import Any, Dict, List, Optional, Tuple, cast
 
 import pytorch_lightning as pl
 import torch
@@ -10,14 +10,13 @@ import torchmetrics as tm
 from deep_helpers.tasks import Task
 from torch import Tensor
 
-from ..tokens import TokenMask
-from .loss import PointwiseContrastiveEmbeddingLoss
-from .augmentation import ContrastiveAugmentation
 from ..helpers import update
+from ..tokens import TokenMask
+from .augmentation import ContrastiveAugmentation
+from .loss import PointwiseContrastiveEmbeddingLoss
 
 
 class ContrastiveEmbedding(Task):
-
     def __init__(
         self,
         backbone: str,

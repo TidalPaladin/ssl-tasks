@@ -5,8 +5,8 @@ from typing import Any, Dict, Optional
 import torch
 import torch.nn as nn
 import torchmetrics as tm
-from deep_helpers.tasks import Task
 from deep_helpers.structs import State
+from deep_helpers.tasks import Task
 from torch import Tensor
 
 from ..contrastive import ContrastiveAugmentation
@@ -88,9 +88,7 @@ class MAE(Task):
         # log image with mask tokens filled by MAE predictions
         with torch.no_grad():
             output["masked"] = mask.apply_to_image(x.clone().detach())
-            output["pred"] = mask.apply_to_image(x) + inv_mask.apply_to_image(
-                result["mae"].clip(min=0, max=1)
-            )
+            output["pred"] = mask.apply_to_image(x) + inv_mask.apply_to_image(result["mae"].clip(min=0, max=1))
 
         # log metrics
         if metrics is not None:

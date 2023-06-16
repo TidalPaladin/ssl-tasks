@@ -3,13 +3,19 @@ requires = ["pdm-pep517>=1.0"]
 build-backend = "pdm.pep517.api"
 
 [project]
-name = "python-template"
+name = "ssl_tasks"
 description = ""
 requires-python = ">=3.8"
 authors = [
     {name = "Scott Chase Waggener", email = "tidalpaladin@protonmail.com"},
 ]
-dependencies = []
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.1",
+    "einops>=0.6.0",
+    "deep-helpers @ git+https://github.com/TidalPaladin/deep-helpers.git",
+    "kornia",
+]
 readme = "README.md"
 license = {text = "Apache"}
 dynamic = ["version"]
@@ -63,8 +69,13 @@ quality = [
 [tool.pytest.ini_options]
 markers = [
   "ci_skip",
+  "cuda",
 ]
-filterwarnings = []
+filterwarnings = [
+  "ignore:.*Trying to infer the `batch_size` from an ambiguous collection.*:",
+  "ignore:.*does not have many workers which may be a bottleneck.*:",
+  "ignore:.*torchvision.transforms.v2 namespaces are still.*:",
+]
 
 # Sample script config
 #[project.scripts]

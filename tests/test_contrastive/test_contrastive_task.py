@@ -7,18 +7,16 @@ import pytest
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-from einops.layers.torch import Rearrange
 from torch import Tensor
 
-from ssl_tasks.helpers import divide_tuple
-from ssl_tasks.mae.task import MAE as MAEBase
+from ssl_tasks.contrastive.task import ContrastiveEmbedding as ContrastiveEmbeddingBase
 from ssl_tasks.tokens import TokenMask
 
 
-class TestMAE:
+class TestContrastiveEmbedding:
     @pytest.fixture
     def task(self, optimizer_init, backbone):
-        class MAE(MAEBase):
+        class ContrastiveEmbedding(ContrastiveEmbeddingBase):
             def prepare_backbone(self, _: str) -> nn.Module:
                 return backbone
 
@@ -28,15 +26,7 @@ class TestMAE:
 
             def create_head(self) -> nn.Module:
                 r"""Creates the MAE head for the model"""
-                patch_size: Tuple[int, int] = cast(Any, self.backbone).patch_size
-                dim: int = cast(Any, self.backbone).dim
-                out_channels = 1
-                H, W = divide_tuple(self.img_size, patch_size)
-                Hp, Wp = patch_size
-                return nn.Sequential(
-                    nn.Linear(dim, Hp * Wp * out_channels),
-                    Rearrange("b (h w) (p1 p2 c) -> b c (h p1) (w p2)", h=H, w=W, p1=Hp, p2=Wp),
-                )
+                return nn.Linear(cast(Any, self.backbone).dim, 10)
 
             def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
                 r"""Creates the MAE head for the model"""
@@ -44,10 +34,11 @@ class TestMAE:
 
             def forward(self, x: Tensor, mask: Optional[TokenMask] = None) -> Dict[str, Tensor]:
                 x = self.backbone(x, mask)
-                x = self.mae_head(x)
-                return {"mae": x}
+                x = x.mean(dim=1)
+                x = self.embed_head(x)
+                return {"embed": x}
 
-        return MAE(backbone, optimizer_init=optimizer_init)
+        return ContrastiveEmbedding(backbone, optimizer_init=optimizer_init)
 
     def test_fit(self, task, datamodule, logger):
         trainer = pl.Trainer(

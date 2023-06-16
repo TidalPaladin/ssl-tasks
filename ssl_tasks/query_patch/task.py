@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from typing import Any, Dict, Optional
+from abc import abstractmethod, abstractproperty
+from typing import Any, Dict, Optional, Set, Tuple, cast
 
 import torch
 import torch.nn as nn
@@ -8,14 +9,11 @@ import torchmetrics as tm
 from deep_helpers.structs import State
 from deep_helpers.tasks import Task
 from kornia.geometry.transform import crop_by_indices
-from pytorch_lightning.utilities.rank_zero import rank_zero_only
 from torch import Tensor
 from torchmetrics import MetricCollection
 from torchvision.ops import box_iou
-from torchvision.utils import draw_bounding_boxes
 
 from ..contrastive import ContrastiveAugmentation
-from ..tokens import TokenMask
 from .augmentation import SmallBoxCrop
 
 
@@ -55,15 +53,49 @@ class QueryPatch(Task):
         self,
         backbone: str,
         augment_batches: int = 4,
+        optimizer_init: Dict[str, Any] = {},
+        lr_scheduler_init: Dict[str, Any] = {},
+        lr_scheduler_interval: str = "epoch",
+        lr_scheduler_monitor: str = "train/total_loss_epoch",
+        named_datasets: bool = False,
+        checkpoint: Optional[str] = None,
+        strict_checkpoint: bool = True,
+        log_train_metrics_interval: int = 1,
+        log_train_metrics_on_epoch: bool = False,
+        weight_decay_exemptions: Set[str] = set(),
     ):
-        super().__init__(backbone)
-        self.transform = ContrastiveAugmentation(self.backbone.img_size, num_batches=augment_batches)
-        self.box_transform = SmallBoxCrop(self.backbone.img_size, num_batches=augment_batches)
+        super().__init__(
+            optimizer_init,
+            lr_scheduler_init,
+            lr_scheduler_interval,
+            lr_scheduler_monitor,
+            named_datasets,
+            checkpoint,
+            strict_checkpoint,
+            log_train_metrics_interval,
+            log_train_metrics_on_epoch,
+            weight_decay_exemptions,
+        )
+
+        self.backbone = self.prepare_backbone(backbone)
+        self.box_decoder = self.create_head()
+
+        self.transform = ContrastiveAugmentation(self.img_size, num_batches=augment_batches)
+        self.box_transform = SmallBoxCrop(self.img_size, num_batches=augment_batches)
         self.box_loss = nn.L1Loss(reduction="none")
 
-        self.box_head = nn.Linear(self.dim, 4)
-        nn.init.constant_(self.box_head.bias, 0.5)
-        self.box_decoder = nn.ModuleList(self.backbone.DecoderBlock(self_attn=False) for _ in range(3))
+    @abstractmethod
+    def prepare_backbone(self, backbone: str) -> nn.Module:
+        raise NotImplementedError  # pragma: no cover
+
+    @abstractproperty
+    def img_size(self) -> Tuple[int, int]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def create_head(self) -> nn.Module:
+        r"""Creates the MAE head for the model"""
+        raise NotImplementedError
 
     def create_metrics(self, state: State) -> MetricCollection:
         r"""Gets a MetricCollection for a given state"""
@@ -73,40 +105,16 @@ class QueryPatch(Task):
             }
         )
 
-    def forward_box_decoder(self, x: Tensor, tokens: Tensor) -> Tensor:
-        for block in self.box_decoder:
-            tokens = block(tokens, x)
-        return tokens
-
+    @abstractmethod
     def forward(
         self,
         x: Tensor,
         x_box: Tensor,
-        mask: Optional[TokenMask] = None,
     ) -> Dict[str, Tensor]:
-        # encode the full image and box crop
-        x = self.backbone(x, mask=mask)
-        x_box = self.backbone(x_box, mask=mask)
-
-        # run attention pooling to get a query representing the box crop
-        N = x.shape[0]
-        tokens = self.backbone.tokens(["BOX_Q"], batch_size=N)
-        tokens = self.backbone.forward_pool(x_box, tokens)
-
-        # run attention pooling to get a query representing the box crop
-        tokens = self.forward_box_decoder(x, tokens)
-
-        # get box coords
-        box_pred = self.box_head(tokens[..., -1, None, :])
-        assert box_pred.shape[-1] == 4
-
-        result = {
-            "box": box_pred,
-        }
-        return result
+        raise NotImplementedError
 
     def get_fractional_scale(self, proto: Optional[Tensor] = None) -> Tensor:
-        H, W = self.backbone.img_size
+        H, W = self.img_size
         if proto is not None:
             return proto.new_tensor([W, H, W, H])
         else:
@@ -121,9 +129,26 @@ class QueryPatch(Task):
         return x / fractional_scale
 
     def restrict_bounds(self, x: Tensor) -> Tensor:
-        H, W = self.backbone.img_size
+        H, W = self.img_size
         upper_bound = x.new_tensor([W, H, W, H])
         return x.clip(min=x.new_tensor(0), max=upper_bound)
+
+    def extract_predicted_crop(self, x: Tensor, box_pred: Tensor) -> Tensor:
+        # ensure predicted crop is valid w/ nonzero area
+        box_pred_bounded = box_pred.relu()
+        box_pred_bounded[..., -2:].clip(min=8)
+        pred_xyxy = BoxIOU.convert_coords(self.scale_fractional_to_absolute(box_pred_bounded))
+        pred_xyxy = self.restrict_bounds(pred_xyxy)
+
+        # convert to form expected by kornia
+        top_left = pred_xyxy[..., :2]
+        bottom_right = pred_xyxy[..., -2:]
+        top_right = torch.stack([pred_xyxy[..., 2], pred_xyxy[..., 1]], dim=-1)
+        bottom_left = torch.stack([pred_xyxy[..., 0], pred_xyxy[..., 3]], dim=-1)
+        crop_bounds = torch.cat([top_left, top_right, bottom_right, bottom_left], dim=-2)
+
+        pred_crop = crop_by_indices(x, crop_bounds, size=self.img_size)
+        return pred_crop
 
     def step(
         self,
@@ -132,10 +157,6 @@ class QueryPatch(Task):
         state: State,
         metrics: Optional[tm.MetricCollection] = None,
     ) -> Dict[str, Any]:
-        raise NotImplementedError  # pragma: no cover
-
-    def step(self, batch: Any, batch_idx: int, metrics: Optional[tm.MetricCollection] = None) -> Dict[str, Any]:
-        output = {}
         x = batch["img"]
 
         # apply a positional augmentation before creating the small box crop.
@@ -160,71 +181,23 @@ class QueryPatch(Task):
             result["box"],
             self.scale_absolute_to_fractional(box),
         ).mean()
-        # box_loss = box_loss.mean(dim=-1).mul(weights).sum()
-        output["log"]["loss_box"] = box_loss
 
         # create absolute coordinate prediction for visualization
         with torch.no_grad():
             pred_xyxy = self.restrict_bounds(pred_xyxy)
-            output["log_boxes"] = {}
-            output["log_boxes"]["box_pred"] = (x, pred_xyxy, box_xyxy)
+            box_xyxy = self.restrict_bounds(box_xyxy)
 
         # log metrics
         if metrics is not None:
-            metrics["iou"].update(pred_xyxy, box_xyxy)
+            cast(tm.Metric, metrics["iou"]).update(pred_xyxy, box_xyxy)
+
+        output = {
+            "log": {
+                "loss_query_patch": box_loss,
+            },
+            "query_patch_pred": pred_xyxy,
+            "query_patch_target": box_xyxy,
+            "x_aug": x.detach(),
+        }
 
         return output
-
-    @rank_zero_only
-    def _log_boxes(self, prefix: str, log: Dict[str, Any], experiment: Any) -> None:
-        with torch.no_grad():
-            for k, (img, box_pred, box) in log.items():
-                if img.dtype != torch.uint8:
-                    img = img.mul(255).byte()
-                img = self._draw_bounding_boxes(img, box_pred, colors="blue")
-                img = self._draw_bounding_boxes(img, box, colors="red")
-                experiment.add_images(f"{prefix}/{k}", img, global_step=self.global_step)
-
-    def _convert_coords(self, boxes: Tensor) -> Tensor:
-        center = boxes[..., :2]
-        wh = boxes[..., -2:]
-        mins = center - wh.div(2, rounding_mode="floor")
-        maxes = center + wh.div(2, rounding_mode="floor")
-        return torch.cat([mins, maxes], dim=-1)
-
-    @torch.no_grad()
-    def _draw_bounding_boxes(self, x: Tensor, boxes: Tensor, **kwargs) -> Tensor:
-        assert boxes.shape[-1] == 4
-        if x.ndim == 4:
-            assert boxes.ndim == 3
-            results = []
-            for x_batch, box_batch in zip(x, boxes):
-                t = self._draw_bounding_boxes(x_batch, box_batch, **kwargs)
-                results.append(t)
-            return torch.stack(results, 0)
-
-        H, W = x.shape[-2:]
-        boxes[..., :2].clip_(min=0)
-        boxes[..., 2:].clip_(max=boxes.new_tensor([W, H]))
-        return draw_bounding_boxes(x, boxes, **kwargs)
-
-    def _log_extras(self, prefix: str, output: Dict[str, Any], experiment: Any):
-        super()._log_extras(prefix, output, experiment)
-        self._log_boxes(prefix, output.get("log_boxes", {}), experiment)
-
-    def extract_predicted_crop(self, x: Tensor, box_pred: Tensor) -> Tensor:
-        # ensure predicted crop is valid w/ nonzero area
-        box_pred_bounded = box_pred.relu()
-        box_pred_bounded[..., -2:].clip(min=8)
-        pred_xyxy = BoxIOU.convert_coords(self.scale_fractional_to_absolute(box_pred_bounded))
-        pred_xyxy = self.restrict_bounds(pred_xyxy)
-
-        # convert to form expected by kornia
-        top_left = pred_xyxy[..., :2]
-        bottom_right = pred_xyxy[..., -2:]
-        top_right = torch.stack([pred_xyxy[..., 2], pred_xyxy[..., 1]], dim=-1)
-        bottom_left = torch.stack([pred_xyxy[..., 0], pred_xyxy[..., 3]], dim=-1)
-        crop_bounds = torch.cat([top_left, top_right, bottom_right, bottom_left], dim=-2)
-
-        pred_crop = crop_by_indices(x, crop_bounds, size=self.backbone.img_size)
-        return pred_crop

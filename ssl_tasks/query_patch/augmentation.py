@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.transforms as T
 import torchvision.transforms.functional as TF
-from torch import Tensor
+from torch import Tensor, autocast  # type: ignore
 
 
 class SmallBoxCrop(nn.Module):
@@ -135,7 +135,7 @@ class SmallBoxCrop(nn.Module):
 
     def _batch_forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
         dtype = x.dtype
-        with torch.autocast(device_type="cuda", enabled=False):
+        with autocast(device_type="cuda", enabled=False):
             # shift the full size image and generate a local crop with coords
             H, W = x.shape[-2:]
             x, box = self.shift_and_crop(x)

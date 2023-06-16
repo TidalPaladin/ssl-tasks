@@ -71,7 +71,11 @@ markers = [
   "ci_skip",
   "cuda",
 ]
-filterwarnings = []
+filterwarnings = [
+  "ignore:.*Trying to infer the `batch_size` from an ambiguous collection.*:",
+  "ignore:.*does not have many workers which may be a bottleneck.*:",
+  "ignore:.*torchvision.transforms.v2 namespaces are still.*:",
+]
 
 # Sample script config
 #[project.scripts]

@@ -1,64 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 from dataclasses import dataclass, replace
-from typing import Dict, Iterator, Optional, Sequence, Tuple, Union
+from typing import Optional, Sequence, Tuple, Union
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
 from torch import Tensor
 
 from .helpers import divide_tuple
-
-
-class EmbeddingTokens(nn.Module):
-    def __init__(self, dim: int, names: Sequence[str] = [], unnamed: int = 0):
-        super().__init__()
-        self.dim = dim
-        self.tokens = nn.ParameterDict()
-        for name in names:
-            self.add(name)
-
-    @classmethod
-    def merge(cls, items: Sequence["EmbeddingTokens"]) -> "EmbeddingTokens":
-        base = items[0]
-        for item in items[1:]:
-            base.tokens.update(item.tokens)
-        return base
-
-    def __len__(self) -> int:
-        return len(self.tokens)
-
-    @property
-    def names(self) -> Iterator[str]:
-        for k in self.tokens.keys():
-            yield k
-
-    def add(self, name: str) -> None:
-        token = nn.Parameter(torch.empty(1, 1, self.dim))
-        nn.init.normal_(token)
-        self.tokens[name] = token
-
-    def copy(self, src: str, dest: str) -> None:
-        token = self.tokens[src]
-        self.tokens[dest] = nn.Parameter(token.clone().detach())
-
-    def to_dict(self, tokens: Tensor, names: Optional[Sequence[str]] = None) -> Dict[str, Tensor]:
-        names = names or self.names
-        assert len(names) == tokens.shape[-2]
-        tokens = tokens[..., : len(self), :].split(1, dim=-2)
-        return {k: v for k, v in zip(names, tokens)}
-
-    def forward(self, names: Sequence[str] = [], batch_size: Optional[int] = None) -> Tensor:
-        names = names or list(self.tokens.keys())
-        return self.to_tensor({n: self.tokens[n] for n in names}, batch_size)
-
-    def to_tensor(self, vals: Dict[str, Tensor], batch_size: Optional[int] = None) -> Tensor:
-        tokens = torch.cat(list(vals.values()), dim=1)
-        if batch_size is not None:
-            tokens = tokens.expand(batch_size, -1, -1)
-        return tokens
 
 
 @dataclass

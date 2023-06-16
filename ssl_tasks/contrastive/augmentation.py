@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 import torch
 import torch.nn as nn
 import torchvision.transforms as T
-from torch import Tensor
+from torch import Tensor, autocast  # type: ignore
 
 
 class ContrastiveAugmentation(nn.Module):
@@ -54,7 +54,7 @@ class ContrastiveAugmentation(nn.Module):
     ) -> None:
         super().__init__()
         self.num_batches = num_batches
-        self.resize = T.Resize(img_size)
+        self.resize = T.Resize(img_size, antialias=True)
         self.global_crop = T.RandomResizedCrop(img_size, scale=global_scale, antialias=True)
         self.local_crop = T.RandomResizedCrop(img_size, scale=local_scale, antialias=True)
 
@@ -88,7 +88,7 @@ class ContrastiveAugmentation(nn.Module):
             return self._forward_position(x)
 
     def _forward_position(self, x: Tensor) -> Tensor:
-        with torch.autocast(device_type="cuda", enabled=False):
+        with autocast(device_type="cuda", enabled=False):
             x = self.position_augment(x)
             x = self.rotate(x)
         return x
@@ -98,7 +98,7 @@ class ContrastiveAugmentation(nn.Module):
         r"""Performs only contrastive color augmentation. This is useful for performing
         contrastive color augmentation on a batch of images without modifying their positions.
         """
-        with torch.autocast(device_type="cuda", enabled=False):
+        with autocast(device_type="cuda", enabled=False):
             if self.num_batches > 1:
                 return torch.cat([self.color_augment(t) for t in x.chunk(self.num_batches)], 0)
             else:
@@ -132,7 +132,7 @@ class ContrastiveAugmentation(nn.Module):
                 < 0.5
             )
         )
-        with torch.autocast(device_type="cuda", enabled=False):
+        with autocast(device_type="cuda", enabled=False):
             x = self.rotate(x)
             crop = self.global_crop if global_crop else self.local_crop
             x = crop(x)

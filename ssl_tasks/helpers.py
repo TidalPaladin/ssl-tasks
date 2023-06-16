@@ -3,7 +3,7 @@
 from typing import Dict, Tuple
 
 
-def _check_divisible(
+def check_divisible(
     num: Tuple[int, int],
     denom: Tuple[int, int],
     msg: str = "{num} is not divisible by {denom}",

@@ -3,7 +3,7 @@
 
 import pytest
 import torch
-from torch import Tensor
+from torch import Tensor, autocast  # type: ignore
 
 from ssl_tasks.contrastive import ContrastiveAugmentation
 
@@ -35,7 +35,7 @@ class TestContrastiveAugmentation:
     @pytest.mark.parametrize("dtype", [torch.bfloat16])
     def test_dtype(self, dtype, img_size, batch):
         aug = ContrastiveAugmentation(img_size)
-        with torch.autocast("cpu", dtype=dtype):
+        with autocast("cpu", dtype=dtype):
             out = aug(batch.to(dtype))
         assert out.dtype == dtype
 

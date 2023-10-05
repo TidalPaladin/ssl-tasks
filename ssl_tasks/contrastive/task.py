@@ -114,7 +114,7 @@ class ContrastiveEmbedding(Task):
         x = batch["img"]
 
         # only use 1/3 the batch since we have to send 3x the inputs
-        x = x[::3]
+        x = x[: len(x) // 3]
 
         # generate mask if requested
         N = x.shape[0]

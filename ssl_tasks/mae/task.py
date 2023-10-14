@@ -9,18 +9,36 @@ import torchmetrics as tm
 from deep_helpers.structs import State
 from deep_helpers.tasks import Task
 from torch import Tensor
+from torchmetrics.image.psnr import PeakSignalNoiseRatio
 
-from ..contrastive import ContrastiveAugmentation
 from ..tokens import TokenMask
 
 
 class MAE(Task, ABC):
+    r"""Masked Autoencoder task.
+
+    Args:
+        backbone: The name of the backbone model.
+        mask_ratio: The ratio of the input to mask.
+        mask_scale: The scale of the mask block size.
+        loss_includes_unmasked: Whether the loss includes unmasked tokens.
+        optimizer_init: The initialization parameters for the optimizer.
+        lr_scheduler_init: The initialization parameters for the learning rate scheduler.
+        lr_interval: The interval for the learning rate update.
+        lr_monitor: The metric to monitor for learning rate update.
+        named_datasets: Whether to use named datasets.
+        checkpoint: The path to the checkpoint file.
+        strict_checkpoint: Whether to strictly enforce the checkpoint.
+        log_train_metrics_interval: The interval for logging training metrics.
+        log_train_metrics_on_epoch: Whether to log training metrics on epoch end.
+        weight_decay_exemptions: The set of parameters to exempt from weight decay.
+    """
+
     def __init__(
         self,
         backbone: str,
         mask_ratio: float = 0.4,
         mask_scale: int = 2,
-        augment_batches: int = 4,
         loss_includes_unmasked: bool = True,
         optimizer_init: Dict[str, Any] = {},
         lr_scheduler_init: Dict[str, Any] = {},
@@ -53,8 +71,6 @@ class MAE(Task, ABC):
 
         self.backbone = self.prepare_backbone(backbone)
         self.mae_head = self.create_head()
-
-        self.transform = ContrastiveAugmentation(self.img_size, num_batches=augment_batches)
         self.mae_loss = nn.L1Loss()
 
     @abstractproperty
@@ -62,20 +78,33 @@ class MAE(Task, ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def prepare_backbone(self, backbone: str) -> nn.Module:
+        """
+        Prepares the backbone for the model.
+
+        Args:
+            backbone (str): The name of the backbone to prepare.
+
+        Returns:
+            nn.Module: The prepared backbone module.
+        """
+        raise NotImplementedError  # pragma: no cover
+
+    @abstractmethod
     def create_head(self) -> nn.Module:
         r"""Creates the MAE head for the model"""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
     def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
         r"""Creates the MAE head for the model"""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     def create_metrics(self, state: State) -> tm.MetricCollection:
         r"""Gets a MetricCollection for a given state"""
         return tm.MetricCollection(
             {
-                "psnr": tm.PeakSignalNoiseRatio(),
+                "psnr": PeakSignalNoiseRatio(),
             }
         )
 
@@ -95,9 +124,6 @@ class MAE(Task, ABC):
         metrics: Optional[tm.MetricCollection] = None,
     ) -> Dict[str, Any]:
         x: Tensor = batch["img"]
-
-        # apply augmentation
-        x = self.transform(x)
 
         # generate mask and log images
         N = x.shape[0]

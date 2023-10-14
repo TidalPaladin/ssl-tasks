@@ -11,7 +11,7 @@ from einops.layers.torch import Rearrange
 from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision.datasets import FakeData as TVFakeData
-from torchvision.transforms.v2 import ConvertImageDtype, ToImageTensor
+from torchvision.transforms.v2 import ConvertImageDtype, ToImage
 
 from ssl_tasks.tokens import TokenMask
 
@@ -53,7 +53,7 @@ class Backbone(nn.Module):
 class FakeData(TVFakeData):
     def __getitem__(self, index: int) -> Dict[str, Any]:
         img, _ = super().__getitem__(index)
-        img = ToImageTensor()(img)
+        img = ToImage()(img)
         img = ConvertImageDtype(torch.float32)(img)
         return {"img": img}
 

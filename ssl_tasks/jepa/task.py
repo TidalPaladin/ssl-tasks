@@ -8,7 +8,6 @@ from deep_helpers.structs import State
 from deep_helpers.tasks import Task
 from torch import Tensor
 
-from ..contrastive import ContrastiveAugmentation
 from ..tokens import TokenMask
 
 
@@ -18,8 +17,7 @@ class JEPA(Task, ABC):
         backbone: str,
         mask_ratio: float = 0.4,
         mask_scale: int = 2,
-        augment_batches: int = 4,
-        loss_includes_unmasked: bool = True,
+        loss_includes_unmasked: bool = False,
         optimizer_init: Dict[str, Any] = {},
         lr_scheduler_init: Dict[str, Any] = {},
         lr_interval: str = "epoch",
@@ -56,25 +54,21 @@ class JEPA(Task, ABC):
 
     @abstractproperty
     def img_size(self) -> Tuple[int, int]:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
     def create_head(self) -> nn.Module:
-        r"""Creates the MAE head for the model"""
-        raise NotImplementedError
+        r"""Creates the head for the model"""
+        raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
     def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
-        r"""Creates the MAE head for the model"""
-        raise NotImplementedError
+        r"""Creates the token mask"""
+        raise NotImplementedError  # pragma: no cover
 
     def create_metrics(self, state: State) -> tm.MetricCollection:
         r"""Gets a MetricCollection for a given state"""
-        return tm.MetricCollection(
-            {
-                "psnr": tm.PeakSignalNoiseRatio(),
-            }
-        )
+        return tm.MetricCollection({})
 
     def forward(
         self,
@@ -82,7 +76,7 @@ class JEPA(Task, ABC):
         mask: Optional[TokenMask] = None,
     ) -> Dict[str, Tensor]:
         x = self.backbone(x, mask)
-        return {"mae": self.mae_head(x)}
+        return {"jepa": self.jepa_head(x)}
 
     def step(
         self,
@@ -93,48 +87,46 @@ class JEPA(Task, ABC):
     ) -> Dict[str, Any]:
         x: Tensor = batch["img"]
 
-        # apply augmentation
-        x = self.transform(x)
-
         # generate mask and log images
         N = x.shape[0]
         mask = self.create_token_mask(N, x.device)
 
-        # forward pass
+        # generate ground truth with forward pass of unmasked image
+        with torch.no_grad():
+            target: Tensor = self(x)["jepa"]
+
+        # generate predictions in latent space using masked image
         assert mask is not None
-        result = self(x, mask)
+        result: Tensor = self(x, mask)["jepa"]
 
         # first calculate loss on unmasked tokens if requested
         if self.loss_includes_unmasked:
-            x_mae = mask.apply_to_image(x, None)
-            pred_mae = mask.apply_to_image(result["mae"], None)
-            loss_unmasked = self.mae_loss(pred_mae, x_mae)
+            y = mask.apply_to_tokens(target, None)
+            pred_jepa = mask.apply_to_tokens(result, None)
+            loss_unmasked = self.jepa_loss(pred_jepa, y)
         else:
             loss_unmasked = 0
 
         # calculate loss on masked tokens
         inv_mask = ~mask
-        x_mae = inv_mask.apply_to_image(x, None)
-        pred_mae = inv_mask.apply_to_image(result["mae"], None)
-        loss_masked = self.mae_loss(pred_mae, x_mae)
+        y = inv_mask.apply_to_tokens(target, None)
+        pred_jepa = inv_mask.apply_to_tokens(result, None)
+        loss_masked = self.jepa_loss(pred_jepa, y)
 
-        # TODO weight this so masked and unmasked losses contribute equally depending on mask ratio
+        # Compute total loss
         loss = loss_masked + loss_unmasked
 
-        # log metrics
-        if metrics is not None:
-            metrics.update(x_mae, pred_mae)
-
-        # log image with mask tokens filled by MAE predictions
         with torch.no_grad():
             masked_img = mask.apply_to_image(x.clone().detach())
-            pred_img = mask.apply_to_image(x) + inv_mask.apply_to_image(result["mae"].clip(min=0, max=1))
+            jepa_true = target.clone().detach()
+            jepa_pred = result.clone().detach()
 
         output = {
             "masked": masked_img,
-            "mae_pred": pred_img,
+            "jepa_pred": jepa_pred,
+            "jepa_true": jepa_true,
             "log": {
-                "loss_mae": loss,
+                "loss_jepa": loss,
             },
         }
 
@@ -144,5 +136,5 @@ class JEPA(Task, ABC):
     def predict_step(self, batch: Any, *args, **kwargs) -> Dict[str, Any]:
         pred = self(batch["img"])
         return {
-            "mae": pred["mae"],
+            "jepa": pred["jepa"],
         }

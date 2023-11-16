@@ -53,6 +53,7 @@ class QueryPatch(Task):
         self,
         backbone: str,
         augment_batches: int = 4,
+        adjust_batch_size: bool = True,
         optimizer_init: Dict[str, Any] = {},
         lr_scheduler_init: Dict[str, Any] = {},
         lr_interval: str = "epoch",
@@ -79,6 +80,7 @@ class QueryPatch(Task):
 
         self.backbone = self.prepare_backbone(backbone)
         self.box_decoder = self.create_head()
+        self.adjust_batch_size = adjust_batch_size
 
         self.transform = ContrastiveAugmentation(self.img_size, num_batches=augment_batches)
         self.box_transform = SmallBoxCrop(self.img_size, num_batches=augment_batches)
@@ -158,6 +160,9 @@ class QueryPatch(Task):
         metrics: Optional[tm.MetricCollection] = None,
     ) -> Dict[str, Any]:
         x = batch["img"]
+
+        # only use 1/2 the batch since we have to send 2x the inputs
+        x = x[: len(x) // 2] if self.adjust_batch_size else x
 
         # apply a positional augmentation before creating the small box crop.
         # once a box crop is made, no position augmentations of global image can be made.

@@ -52,6 +52,14 @@ class QueryPatch(Task):
     def __init__(
         self,
         backbone: str,
+        p_invert: float = 0.1,
+        brightness: float = 0.3,
+        contrast: float = 0.3,
+        saturation: float = 0.2,
+        hue: float = 0.05,
+        p_grayscale: float = 0.2,
+        vflip: bool = True,
+        hflip: bool = True,
         augment_batches: int = 4,
         adjust_batch_size: bool = True,
         optimizer_init: Dict[str, Any] = {},
@@ -83,7 +91,18 @@ class QueryPatch(Task):
         self.adjust_batch_size = adjust_batch_size
 
         self.transform = ContrastiveAugmentation(self.img_size, num_batches=augment_batches)
-        self.box_transform = SmallBoxCrop(self.img_size, num_batches=augment_batches)
+        self.box_transform = SmallBoxCrop(
+            self.img_size,
+            num_batches=augment_batches,
+            p_invert=p_invert,
+            brightness=brightness,
+            contrast=contrast,
+            saturation=saturation,
+            hue=hue,
+            p_grayscale=p_grayscale,
+            vflip=vflip,
+            hflip=hflip,
+        )
         self.box_loss = nn.L1Loss(reduction="none")
 
     @abstractmethod
@@ -185,7 +204,9 @@ class QueryPatch(Task):
         box_loss = self.box_loss(
             result["box"],
             self.scale_absolute_to_fractional(box),
-        ).mean()
+        )
+        # apply weight and reduce
+        box_loss = (box_loss * self.get_crop_weights(x_box).view(-1, 1, 1)).sum()
 
         # create absolute coordinate prediction for visualization
         with torch.no_grad():
@@ -206,3 +227,23 @@ class QueryPatch(Task):
         }
 
         return output
+
+    @torch.no_grad()
+    def get_crop_weights(self, x_box: Tensor) -> Tensor:
+        """
+        Calculate and return the crop weights for the given tensor. Use this to weight certain crops
+        more than others in the loss function. By default, this returns a uniform distribution.
+        It is expected that the output of this function will sum to 1.
+
+        Args:
+            x_box: The tensor for which to calculate the crop weights.
+
+        Shapes:
+            * ``x_box`` - :math:`(N, *)` where :math:`N` is the batch size.
+            * Output - :math:`(N, )`
+
+        Returns:
+            The calculated crop weights.
+        """
+        N = x_box.shape[0]
+        return x_box.new_tensor([1.0 / N] * N)

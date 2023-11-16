@@ -13,6 +13,22 @@ from torch import Tensor, autocast  # type: ignore
 class SmallBoxCrop(nn.Module):
     r"""Extracts a small augmented box crop.
 
+    Args:
+        img_size: Size of the image.
+        scale: Scale of the box crop.
+        ratio: Ratio of the box crop.
+        augment_color: Whether to augment color.
+        augment_position: Whether to augment position.
+        num_batches: Number of batches.
+        p_invert: Probability of inverting the color.
+        brightness: Brightness factor for color augmentation.
+        contrast: Contrast factor for color augmentation.
+        saturation: Saturation factor for color augmentation.
+        hue: Hue factor for color augmentation.
+        p_grayscale: Probability of converting the image to grayscale.
+        p_vflip: Probability of flipping the image vertically.
+        p_hflip: Probability of flipping the image horizontally.
+
     Returns:
         Tuple of box crop, box coordinates
     """
@@ -25,6 +41,14 @@ class SmallBoxCrop(nn.Module):
         augment_color: bool = True,
         augment_position: bool = False,
         num_batches: int = 1,
+        p_invert: float = 0.1,
+        brightness: float = 0.3,
+        contrast: float = 0.3,
+        saturation: float = 0.2,
+        hue: float = 0.05,
+        p_grayscale: float = 0.2,
+        vflip: bool = True,
+        hflip: bool = True,
     ):
         super().__init__()
         self.img_size = img_size
@@ -35,15 +59,14 @@ class SmallBoxCrop(nn.Module):
         self.augment_position = augment_position
 
         self.color_augment = nn.Sequential(
-            T.ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.05),
-            T.RandomGrayscale(p=0.2),
-            T.RandomInvert(0.1),
+            T.ColorJitter(brightness=brightness, contrast=contrast, saturation=saturation, hue=hue),
+            T.RandomGrayscale(p=p_grayscale),
+            T.RandomInvert(p_invert),
         )
 
         self.position_augment = nn.Sequential(
-            T.RandomInvert(0.1),
-            T.RandomVerticalFlip(0.5),
-            T.RandomHorizontalFlip(0.5),
+            T.RandomVerticalFlip(0.5 if vflip else 0.0),
+            T.RandomHorizontalFlip(0.5 if hflip else 0.0),
         )
 
     def get_crop_size(self, x: Tensor) -> Tensor:

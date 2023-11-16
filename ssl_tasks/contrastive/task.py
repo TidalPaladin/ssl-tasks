@@ -23,6 +23,7 @@ class ContrastiveEmbedding(Task):
         mask_freq: float = 1.0,
         mask_scale: int = 2,
         augment_batches: int = 4,
+        adjust_batch_size: bool = True,
         optimizer_init: Dict[str, Any] = {},
         lr_scheduler_init: Dict[str, Any] = {},
         lr_interval: str = "epoch",
@@ -49,6 +50,7 @@ class ContrastiveEmbedding(Task):
         self.mask_ratio = mask_ratio
         self.mask_freq = mask_freq
         self.mask_scale = mask_scale
+        self.adjust_batch_size = adjust_batch_size
 
         self.backbone = self.prepare_backbone(backbone)
         self.embed_head = self.create_head()
@@ -114,7 +116,7 @@ class ContrastiveEmbedding(Task):
         x = batch["img"]
 
         # only use 1/3 the batch since we have to send 3x the inputs
-        x = x[: len(x) // 3]
+        x = x[: len(x) // 3] if self.adjust_batch_size else x
 
         # generate mask if requested
         N = x.shape[0]

@@ -2,7 +2,6 @@ from typing import Any, Dict, Optional, Tuple, cast
 
 import pytest
 import pytorch_lightning as pl
-import torch
 import torch.nn as nn
 from torch import Tensor
 
@@ -31,8 +30,11 @@ class TestJEPA:
                 dim: int = cast(Any, self.backbone).dim
                 return nn.Linear(dim, dim)
 
-            def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
-                return TokenMask.create(self.img_size, cast(Any, self.backbone).patch_size, batch_size, device=device)
+            def create_token_mask(self, x: Tensor) -> TokenMask:
+                size = x.shape[-2:]
+                batch_size = x.shape[0]
+                device = x.device
+                return TokenMask.create(size, cast(Any, self.backbone).patch_size, batch_size, device=device)
 
             def forward(self, x: Tensor, mask: Optional[TokenMask] = None) -> Dict[str, Tensor]:
                 x = self.backbone(x, mask)

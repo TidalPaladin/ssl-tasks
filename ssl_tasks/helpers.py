@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from typing import Dict, Tuple
+from typing import Dict, Sequence, Tuple
 
 
 def check_divisible(
@@ -14,7 +14,7 @@ def check_divisible(
             raise ValueError(msg)
 
 
-def divide_tuple(num: Tuple[int, int], denom: Tuple[int, int]) -> Tuple[int, int]:
+def divide_tuple(num: Sequence[int], denom: Sequence[int]) -> Sequence[int]:
     assert len(num) == len(denom)
     return tuple(num[i] // denom[i] for i in range(len(num)))
 

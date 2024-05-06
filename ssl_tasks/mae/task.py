@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-from abc import ABC, abstractmethod, abstractproperty
-from typing import Any, Dict, Optional, Set, Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Set
 
 import torch
 import torch.nn as nn
@@ -73,10 +73,6 @@ class MAE(Task, ABC):
         self.mae_head = self.create_head()
         self.mae_loss = nn.L1Loss()
 
-    @abstractproperty
-    def img_size(self) -> Tuple[int, int]:
-        raise NotImplementedError
-
     @abstractmethod
     def prepare_backbone(self, backbone: str) -> nn.Module:
         """
@@ -96,8 +92,8 @@ class MAE(Task, ABC):
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
-    def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
-        r"""Creates the MAE head for the model"""
+    def create_token_mask(self, x: Tensor) -> TokenMask:
+        r"""Create a token mask for an input."""
         raise NotImplementedError  # pragma: no cover
 
     def create_metrics(self, state: State) -> tm.MetricCollection:
@@ -126,8 +122,7 @@ class MAE(Task, ABC):
         x: Tensor = batch["img"]
 
         # generate mask and log images
-        N = x.shape[0]
-        mask = self.create_token_mask(N, x.device)
+        mask = self.create_token_mask(x)
 
         # forward pass
         assert mask is not None
@@ -135,16 +130,16 @@ class MAE(Task, ABC):
 
         # first calculate loss on unmasked tokens if requested
         if self.loss_includes_unmasked:
-            x_mae = mask.apply_to_image(x, None)
-            pred_mae = mask.apply_to_image(result["mae"], None)
+            x_mae = mask.apply_to_input(x, 0)
+            pred_mae = mask.apply_to_input(result["mae"], 0)
             loss_unmasked = self.mae_loss(pred_mae, x_mae)
         else:
             loss_unmasked = 0
 
         # calculate loss on masked tokens
         inv_mask = ~mask
-        x_mae = inv_mask.apply_to_image(x, None)
-        pred_mae = inv_mask.apply_to_image(result["mae"], None)
+        x_mae = inv_mask.apply_to_input(x, 0)
+        pred_mae = inv_mask.apply_to_input(result["mae"], 0)
         loss_masked = self.mae_loss(pred_mae, x_mae)
 
         # TODO weight this so masked and unmasked losses contribute equally depending on mask ratio
@@ -156,8 +151,8 @@ class MAE(Task, ABC):
 
         # log image with mask tokens filled by MAE predictions
         with torch.no_grad():
-            masked_img = mask.apply_to_image(x.clone().detach())
-            pred_img = mask.apply_to_image(x) + inv_mask.apply_to_image(result["mae"].clip(min=0, max=1))
+            masked_img = mask.apply_to_input(x.clone().detach())
+            pred_img = mask.apply_to_input(x) + inv_mask.apply_to_input(result["mae"].clip(min=0, max=1))
 
         output = {
             "masked": masked_img,

@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional, Tuple, cast
 
 import pytest
 import pytorch_lightning as pl
-import torch
 import torch.nn as nn
 from einops.layers.torch import Rearrange
 from torch import Tensor
@@ -38,9 +37,11 @@ class TestMAE:
                     Rearrange("b (h w) (p1 p2 c) -> b c (h p1) (w p2)", h=H, w=W, p1=Hp, p2=Wp),
                 )
 
-            def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
-                r"""Creates the MAE head for the model"""
-                return TokenMask.create(self.img_size, cast(Any, self.backbone).patch_size, batch_size, device=device)
+            def create_token_mask(self, x: Tensor) -> TokenMask:
+                size = x.shape[-2:]
+                batch_size = x.shape[0]
+                device = x.device
+                return TokenMask.create(size, cast(Any, self.backbone).patch_size, batch_size, device=device)
 
             def forward(self, x: Tensor, mask: Optional[TokenMask] = None) -> Dict[str, Tensor]:
                 x = self.backbone(x, mask)

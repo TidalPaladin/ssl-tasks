@@ -1,5 +1,5 @@
-from abc import ABC, abstractmethod, abstractproperty
-from typing import Any, Dict, Optional, Set, Tuple
+from abc import ABC, abstractmethod
+from typing import Any, Dict, Optional, Set
 
 import torch
 import torch.nn as nn
@@ -52,17 +52,13 @@ class JEPA(Task, ABC):
 
         self.jepa_loss = nn.MSELoss()
 
-    @abstractproperty
-    def img_size(self) -> Tuple[int, int]:
-        raise NotImplementedError  # pragma: no cover
-
     @abstractmethod
     def create_head(self) -> nn.Module:
         r"""Creates the head for the model"""
         raise NotImplementedError  # pragma: no cover
 
     @abstractmethod
-    def create_token_mask(self, batch_size: int, device: torch.device = torch.device("cpu")) -> TokenMask:
+    def create_token_mask(self, x: Tensor) -> TokenMask:
         r"""Creates the token mask"""
         raise NotImplementedError  # pragma: no cover
 
@@ -88,8 +84,7 @@ class JEPA(Task, ABC):
         x: Tensor = batch["img"]
 
         # generate mask and log images
-        N = x.shape[0]
-        mask = self.create_token_mask(N, x.device)
+        mask = self.create_token_mask(x)
 
         # generate ground truth with forward pass of unmasked image
         with torch.no_grad():
@@ -117,7 +112,7 @@ class JEPA(Task, ABC):
         loss = loss_masked + loss_unmasked
 
         with torch.no_grad():
-            masked_img = mask.apply_to_image(x.clone().detach())
+            masked_img = mask.apply_to_input(x.clone().detach())
             jepa_true = target.clone().detach()
             jepa_pred = result.clone().detach()
 

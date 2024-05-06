@@ -5,7 +5,7 @@ build-backend = "pdm.pep517.api"
 [project]
 name = "ssl_tasks"
 description = ""
-requires-python = ">=3.8"
+requires-python = ">=3.10,<3.12"
 authors = [
     {name = "Scott Chase Waggener", email = "tidalpaladin@protonmail.com"},
 ]
@@ -19,8 +19,6 @@ dependencies = [
 readme = "README.md"
 license = {text = "Apache"}
 dynamic = ["version"]
-
-[project.optional-dependencies]
 
 [tool.autoflake]
 remove-all-unused-imports = true
@@ -52,11 +50,10 @@ version = { source = "scm" }
 
 [tool.pdm.dev-dependencies]
 test = [
-  "pytest",
-  "pytest-mock",
-  "pytest-cov",
-  "coverage",
-  "pdbpp",
+    "pytest",
+    "pytest-mock",
+    "pytest-cov",
+    "coverage",
 ]
 quality = [
   "autoflake",

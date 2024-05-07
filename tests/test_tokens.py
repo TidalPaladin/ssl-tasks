@@ -127,3 +127,28 @@ class TestTokenMask:
         assert_close(o[token_mask.mask], x[token_mask.mask])
         assert_close(o[~token_mask.mask], o.new_tensor(0).broadcast_to(o[~token_mask.mask].shape).contiguous())
         o.sum().backward()
+
+    @pytest.mark.parametrize(
+        "mask, exp",
+        [
+            (([True, True], [True, True]), False),
+            (([True, False], [True, True]), True),
+            (([False, True], [True, True]), True),
+            (([False, False], [False, False]), False),
+        ],
+    )
+    def test_is_ragged(self, mask, exp):
+        token_mask = TokenMask(torch.tensor(mask, dtype=torch.bool), (2, 2), (2, 2))
+        assert token_mask.is_ragged == exp
+
+    def test_apply_to_tokens_ragged(self):
+        torch.random.manual_seed(0)
+        N, L, D = 2, 2, 8
+        mask = torch.tensor([[True, False], [True, True]], dtype=torch.bool)
+        token_mask = TokenMask(mask, (2, 2), (2, 2))
+
+        x = torch.randn(N, L, D, requires_grad=True)
+        o = token_mask.apply_to_tokens(x, fill_value=None)
+        assert o.shape == (N, L, D)
+        assert (o[0, 1] == 0).all()
+        o.sum().backward()

@@ -52,8 +52,8 @@ class TokenMask:
         return math.prod(self.tokenized_image_size)
 
     @property
-    def unmasked_count(self) -> int:
-        return int(self.mask.sum().item())
+    def unmasked_count(self) -> Tensor:
+        return self.mask.sum(dim=-1)
 
     def apply_to_input(self, x: Tensor, fill_value: float | Tensor = 0) -> Tensor:
         r"""Apply the mask to an input.
@@ -100,6 +100,9 @@ class TokenMask:
     ) -> Tensor:
         r"""Apply the mask to tokens.
 
+        When ``fill_value=None`` and ``mask.is_ragged``, the result is padded to match the number of tokens in the
+        largest batch element. Padding is done with zeros and is applied to the end of each batch sequence.
+
         Args:
             x: Input tensor
             fill_value: Value to fill the masked tokens with. If ``None``, the masked tokens are removed.
@@ -114,8 +117,20 @@ class TokenMask:
         """
         N, L, D = x.shape
         if fill_value is None:
-            m = ~self.mask if inverse else self.mask
-            x = rearrange(x[m], "(n l) c -> n l c", n=N)
+            m: Tensor = ~self.mask if inverse else self.mask
+            if self.is_ragged:
+                max_tokens = int(self.unmasked_count.amax().item())
+                o = x.new_zeros(N, max_tokens, D)
+                indices = torch.stack(
+                    [
+                        torch.arange(N, device=x.device).view(N, 1).expand(-1, max_tokens),
+                        torch.arange(max_tokens, device=x.device).view(1, max_tokens).expand(N, -1),
+                    ],
+                    dim=-1,
+                )
+                x = torch.index_put(o, indices[m].unbind(-1), x[m])
+            else:
+                x = rearrange(x[m], "(n l) c -> n l c", n=N)
         else:
             fill_value = fill_value.type_as(x) if isinstance(fill_value, Tensor) else fill_value
             mask = self.mask.view(N, L, 1)
@@ -206,6 +221,10 @@ class TokenMask:
             mask = mask.view(batch_size, math.prod(tokenized_size)).bool()
 
         return cls(mask, size, patch_size)
+
+    @property
+    def is_ragged(self) -> bool:
+        return len(set(self.mask.sum(-1).tolist())) > 1
 
     def repeat(self, x: int) -> "TokenMask":
         return replace(self, mask=self.mask.repeat(x, 1))

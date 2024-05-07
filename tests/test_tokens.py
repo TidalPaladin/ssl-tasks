@@ -73,7 +73,7 @@ class TestTokenMask:
         D = 8
         L = math.prod(divide_tuple(size, patch_size))
         token_mask = TokenMask.create(size, patch_size)
-        x = torch.randn(1, L, D)
+        x = torch.randn(1, L, D, requires_grad=True)
         o = token_mask.apply_to_tokens(x, fill_value)
 
         assert o.shape[-1] == D
@@ -84,6 +84,8 @@ class TestTokenMask:
             exp = torch.as_tensor(fill_value, dtype=o.dtype).broadcast_to(o[~token_mask.mask].shape).contiguous()
             assert_close(o[~token_mask.mask], exp)
             assert_close(o[token_mask.mask], x[token_mask.mask])
+
+        o.sum().backward()
 
     @pytest.mark.parametrize(
         "size, patch_size",
@@ -99,7 +101,29 @@ class TestTokenMask:
         D = 8
         ratio = 0.25
         token_mask = TokenMask.create(size, patch_size, mask_ratio=ratio)
-        x = torch.ones(1, D, *size)
+        x = torch.ones(1, D, *size, requires_grad=True)
         o = token_mask.apply_to_input(x, fill_value)
         assert o.shape == x.shape
         assert_close(o.mean(), o.new_tensor(1 - ratio))
+        o.sum().backward()
+
+    @pytest.mark.parametrize(
+        "size, patch_size",
+        [
+            ((224, 224), (16, 16)),
+            ((256, 256), (32, 32)),
+            ((512, 512), (64, 64)),
+            ((32, 224, 224), (4, 16, 16)),
+        ],
+    )
+    def test_restore_tokens(self, size, patch_size):
+        D = 8
+        L = math.prod(divide_tuple(size, patch_size))
+        token_mask = TokenMask.create(size, patch_size)
+        x = torch.randn(1, L, D, requires_grad=True)
+        masked = token_mask.apply_to_tokens(x, fill_value=None)
+        o = token_mask.restore_tokens(masked)
+
+        assert_close(o[token_mask.mask], x[token_mask.mask])
+        assert_close(o[~token_mask.mask], o.new_tensor(0).broadcast_to(o[~token_mask.mask].shape).contiguous())
+        o.sum().backward()

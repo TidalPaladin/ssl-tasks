@@ -119,8 +119,8 @@ class TokenMask:
         if fill_value is None:
             m: Tensor = ~self.mask if inverse else self.mask
             if self.is_ragged:
+                # Build indices where we want to put non-padding values
                 max_tokens = int(self.unmasked_count.amax().item())
-                o = x.new_zeros(N, max_tokens, D)
                 indices = torch.stack(
                     [
                         torch.arange(N, device=x.device).view(N, 1).expand(-1, max_tokens),
@@ -128,7 +128,10 @@ class TokenMask:
                     ],
                     dim=-1,
                 )
-                x = torch.index_put(o, indices[m].unbind(-1), x[m])
+                indices = indices[indices[..., -1] < self.unmasked_count.view(-1, 1)]
+
+                o = x.new_zeros(N, max_tokens, D)
+                x = torch.index_put(o, indices.unbind(-1), x[m])
             else:
                 x = rearrange(x[m], "(n l) c -> n l c", n=N)
         else:
@@ -225,6 +228,10 @@ class TokenMask:
     @property
     def is_ragged(self) -> bool:
         return len(set(self.mask.sum(-1).tolist())) > 1
+
+    @property
+    def indices(self) -> Tensor:
+        return self.mask.nonzero()
 
     def repeat(self, x: int) -> "TokenMask":
         return replace(self, mask=self.mask.repeat(x, 1))

@@ -112,12 +112,14 @@ class TokenMask:
         Returns:
             Input tensor with the mask applied
         """
-        N = x.shape[0]
+        N, L, D = x.shape
         if fill_value is None:
             m = ~self.mask if inverse else self.mask
             x = rearrange(x[m], "(n l) c -> n l c", n=N)
         else:
-            x[~self.mask] = fill_value.type_as(x) if isinstance(fill_value, Tensor) else fill_value
+            fill_value = fill_value.type_as(x) if isinstance(fill_value, Tensor) else fill_value
+            mask = self.mask.view(N, L, 1)
+            x = torch.where(mask, x, fill_value)
         return x
 
     def restore_tokens(self, x: Tensor, fill_value: float = 0) -> Tensor:

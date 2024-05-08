@@ -96,6 +96,7 @@ class TokenMask:
         self,
         x: Tensor,
         fill_value: Optional[Union[float, Tensor]] = None,
+        padding_value: float | Tensor = 0,
         inverse: bool = False,
     ) -> Tensor:
         r"""Apply the mask to tokens.
@@ -106,6 +107,7 @@ class TokenMask:
         Args:
             x: Input tensor
             fill_value: Value to fill the masked tokens with. If ``None``, the masked tokens are removed.
+            padding_value: Padding value used when the mask is ragged.
             inverse: If ``True``, the mask is inverted before applying it.
 
         Shapes:
@@ -130,7 +132,10 @@ class TokenMask:
                 )
                 indices = indices[indices[..., -1] < self.unmasked_count.view(-1, 1)]
 
-                o = x.new_zeros(N, max_tokens, D)
+                if isinstance(padding_value, Tensor):
+                    o = padding_value.type_as(x).broadcast_to((N, max_tokens, D))
+                else:
+                    o = x.new_full((N, max_tokens, D), padding_value)
                 x = torch.index_put(o, indices.unbind(-1), x[m])
             else:
                 x = rearrange(x[m], "(n l) c -> n l c", n=N)

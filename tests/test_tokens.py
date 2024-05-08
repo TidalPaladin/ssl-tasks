@@ -141,17 +141,18 @@ class TestTokenMask:
         token_mask = TokenMask(torch.tensor(mask, dtype=torch.bool), (2, 2), (2, 2))
         assert token_mask.is_ragged == exp
 
-    def test_apply_to_tokens_ragged(self):
+    @pytest.mark.parametrize("pad_value", [0, 1, torch.zeros(8)])
+    def test_apply_to_tokens_ragged(self, pad_value):
         torch.random.manual_seed(0)
         N, L, D = 3, 2, 8
         mask = torch.tensor([[True, False], [True, True], [False, True]], dtype=torch.bool)
         token_mask = TokenMask(mask, (2, 2), (2, 2))
 
         x = torch.randn(N, L, D, requires_grad=True)
-        o = token_mask.apply_to_tokens(x, fill_value=None)
+        o = token_mask.apply_to_tokens(x, fill_value=None, padding_value=pad_value)
         assert o.shape == (N, L, D)
-        assert (o[0, 1] == 0).all()
-        assert (o[2, 1] == 0).all()
+        assert (o[0, 1] == pad_value).all()
+        assert (o[2, 1] == pad_value).all()
         assert (o[1] == x[1]).all()
         assert (o[0, 0] == x[0, 0]).all()
         assert (o[2, 0] == x[2, 1]).all()

@@ -168,3 +168,32 @@ class TestTokenMask:
         o = token_mask.apply_to_tokens(x, fill_value=None)
         assert o.shape[0] == N
         assert o.shape[-1] == D
+
+    def test_restore_tokens_ragged(self):
+        torch.random.manual_seed(0)
+        N, L, D = 3, 2, 8
+        mask = torch.tensor([[True, False], [True, True], [False, True]], dtype=torch.bool)
+        token_mask = TokenMask(mask, (2, 2), (2, 2))
+
+        x = torch.randn(N, L, D, requires_grad=True)
+        tokens = token_mask.apply_to_tokens(x, fill_value=None, padding_value=float("-inf"))
+        o = token_mask.restore_tokens(tokens, fill_value=float("inf"))
+
+        assert o.shape == (N, L, D)
+        assert_close(o[mask], x[mask])
+        assert (o[~mask].isinf()).all()
+        o.sum().backward()
+
+    def test_restore_tokens_ragged_large(self):
+        torch.random.manual_seed(0)
+        N, L, D = 32, 512, 8
+        mask = torch.rand((N, L)) > 0.5
+        token_mask = TokenMask(mask, (2, 2), (2, 2))
+
+        x = torch.randn(N, L, D, requires_grad=True)
+        tokens = token_mask.apply_to_tokens(x, fill_value=None, padding_value=float("-inf"))
+        o = token_mask.restore_tokens(tokens, fill_value=float("inf"))
+
+        assert o.shape == (N, L, D)
+        assert_close(o[mask], x[mask])
+        assert (o[~mask].isinf()).all()

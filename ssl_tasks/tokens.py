@@ -49,7 +49,7 @@ class TokenMask:
 
     @property
     def num_tokens(self) -> int:
-        return math.prod(self.tokenized_image_size)
+        return self.mask.shape[-1]
 
     @property
     def unmasked_count(self) -> Tensor:
@@ -164,7 +164,19 @@ class TokenMask:
         """
         N, _, D = x.shape
         output = x.new_full((N, self.num_tokens, D), fill_value)
-        output[self.mask] = x.view(-1, D)
+        if self.is_ragged:
+            max_tokens = int(self.unmasked_count.amax().item())
+            indices = torch.stack(
+                [
+                    torch.arange(N, device=x.device).view(N, 1).expand(-1, max_tokens),
+                    torch.arange(max_tokens, device=x.device).view(1, max_tokens).expand(N, -1),
+                ],
+                dim=-1,
+            )
+            indices = indices[indices[..., -1] < self.unmasked_count.view(-1, 1)]
+            output[self.mask] = x[indices.unbind(-1)]
+        else:
+            output[self.mask] = x.view(-1, D)
         return output
 
     @classmethod

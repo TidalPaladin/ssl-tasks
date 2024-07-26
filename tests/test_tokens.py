@@ -197,3 +197,25 @@ class TestTokenMask:
         assert o.shape == (N, L, D)
         assert_close(o[mask], x[mask])
         assert (o[~mask].isinf()).all()
+
+    @pytest.mark.parametrize(
+        "size, patch_size, target_size",
+        [
+            ((256, 256), (32, 32), (512, 512)),
+            ((32, 256, 256), (4, 16, 16), (64, 512, 512)),
+        ],
+    )
+    def test_resize(self, size, patch_size, target_size):
+        torch.random.manual_seed(0)
+        token_mask = TokenMask.create(size, patch_size)
+
+        D = 8
+        L = math.prod(divide_tuple(size, patch_size))
+        x = torch.ones(1, L, D).view(1, -1, D)
+        L_target = math.prod(divide_tuple(target_size, patch_size))
+        y = torch.ones(1, L_target, D).view(1, -1, D)
+
+        o1 = token_mask.apply_to_tokens(x)
+        o2 = token_mask.resize(target_size).apply_to_tokens(y)
+        assert o2.shape[1] > o1.shape[1]
+        assert o2.shape[1] % o1.shape[1] == 0

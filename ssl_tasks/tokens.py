@@ -259,3 +259,21 @@ class TokenMask:
 
     def unmasked(self) -> "TokenMask":
         return replace(self, mask=torch.full_like(self.mask, False))
+
+    def resize(self, size: Sequence[int]) -> "TokenMask":
+        r"""Resize the mask to a new size.
+
+        Args:
+            size: New size of the mask
+
+        Returns:
+            TokenMask: A token mask
+        """
+        new_tokenized_size = divide_tuple(size, self.patch_size)
+        mask = self.mask.view(*self.tokenized_image_size)
+        mask = (
+            F.interpolate(mask.view(1, 1, *mask.shape).float(), size=new_tokenized_size, mode="nearest")
+            .bool()
+            .view(1, -1)
+        )
+        return replace(self, size=size, mask=mask)

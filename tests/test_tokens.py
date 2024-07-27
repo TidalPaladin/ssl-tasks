@@ -219,3 +219,32 @@ class TestTokenMask:
         o2 = token_mask.resize(target_size).apply_to_tokens(y)
         assert o2.shape[1] > o1.shape[1]
         assert o2.shape[1] % o1.shape[1] == 0
+
+    def test_resize_actual(self):
+        torch.random.manual_seed(0)
+        size = (16, 16)
+        patch_size = (2, 2)
+        target_size = (32, 32)
+        token_mask = TokenMask.create(size, patch_size)
+
+        L, D = 8 * 8, 1
+        x = torch.tensor(
+            [
+                [1, 0, 0, 0, 0, 0, 0, 1],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [0, 0, 0, 0, 0, 0, 0, 0],
+                [1, 0, 0, 0, 0, 0, 0, 1],
+            ]
+        ).bool()
+        token_mask.mask = x.view(1, L)
+
+        out = token_mask.resize(target_size)
+        out = out.mask.view((16, 16))
+        assert (out[:2, :2] == 1).all()
+        assert (out[:2, -2:] == 1).all()
+        assert (out[-2:, :2] == 1).all()
+        assert (out[-2:, -2:] == 1).all()

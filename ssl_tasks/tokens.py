@@ -269,11 +269,12 @@ class TokenMask:
         Returns:
             TokenMask: A token mask
         """
+        B = self.mask.shape[0]
         new_tokenized_size = divide_tuple(size, self.patch_size)
-        mask = self.mask.view(*self.tokenized_image_size)
+        mask = self.mask.view(B, *self.tokenized_image_size)
         mask = (
-            F.interpolate(mask.view(1, 1, *mask.shape).float(), size=new_tokenized_size, mode="nearest")
+            F.interpolate(mask.view(B, 1, *mask.shape[1:]).float(), size=new_tokenized_size, mode="nearest")
             .bool()
-            .view(1, -1)
+            .view(B, -1)
         )
         return replace(self, size=size, mask=mask)
